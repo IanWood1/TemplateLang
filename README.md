@@ -1,5 +1,5 @@
 # TemplateLang
-TemplateLang is a language within C++ that uses templates for calculations at both runtime and compile time. Goal of the mini-project was to explore C++ templates and explore what can be done with them.
+TemplateLang is a language within C++ that uses templates for calculations at both runtime and compile time. Goal of the mini-project was to explore C++ templates and learn what can be done with them.
 
 
 ## Usage
@@ -92,34 +92,5 @@ double fib_recursive(double x) {
   return program<
             call<f, variable<0>>, 
             1>{}.run(x);
-}
-```
-
-### e approximation
-```cpp
-double e_approx(double n_terms) {
-  using range_gen = gen<
-		                function<variable<0>, 1>,
-		                value<0>,
-		                add<value<1>, variable<0>>>;
-  
-  using f_factorial = function<
-												reduce_range<
-													function<
-														mul<variable<0>, variable<1>>, 
-														2>,
-													value<1>, 
-													add<value<1>, variable<0>>, 
-                          value<1>>,
-												1>;
-  using fact_gen = compose<
-										range_gen, 
-										f_factorial>;
-  using inv_gen = compose<
-                    fact_gen, 
-                    function<
-                      inv<variable<0>>, 
-                      1>>;
-  return program<sum<inv_gen>, 1>{}.run(n_terms); 
 }
 ```
