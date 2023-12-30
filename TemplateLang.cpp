@@ -11,11 +11,10 @@ double sequence_sum_reduce(double x) {
               reduce_range<
                 function<
                   add<variable<0>, variable<1>>, 
-                  variable<0>, 
-                  variable<1>>,
+                  2>,
                 value<1>, 
                 add<value<1>, variable<0>>>,
-              variable<0>>;
+              1>;
 
   return program<
               call<f, variable<0>>, 
@@ -25,7 +24,7 @@ double sequence_sum_reduce(double x) {
 double sequence_sum_generator(double x) {
 
   using range = gen<
-                  function<variable<0>, variable<0>>,
+                  function<variable<0>, 1>,
                   value<1>,
                   add<value<1>, variable<0>>>;
 
@@ -42,7 +41,7 @@ double fib_recursive(double x) {
                 add<
                   recurse<add<variable<0>, value<-1>>>,
                   recurse<add<variable<0>, value<-2>>>>>,
-              variable<0>>;
+              1>;
   return program<
             call<f, variable<0>>, 
             1>{}.run(x);
@@ -50,7 +49,7 @@ double fib_recursive(double x) {
 
 double e_approx(double n_terms) {
 	using range_gen = gen<
-		                function<variable<0>, variable<0>>,
+		                function<variable<0>, 1>,
 		                value<0>,
 		                add<value<1>, variable<0>>>;
   
@@ -58,13 +57,11 @@ double e_approx(double n_terms) {
 												reduce_range<
 													function<
 														mul<variable<0>, variable<1>>, 
-														variable<0>, 
-														variable<1>>,
+														2>,
 													value<1>, 
 													add<value<1>, variable<0>>, 
                           value<1>>,
-                          
-												variable<0>>;
+												1>;
   using fact_gen = compose<
 										range_gen, 
 										f_factorial>;
@@ -72,7 +69,7 @@ double e_approx(double n_terms) {
                     fact_gen, 
                     function<
                       inv<variable<0>>, 
-                      variable<0>>>;
+                      1>>;
   return program<sum<inv_gen>, 1>{}.run(n_terms); 
 }
 // clang-format on

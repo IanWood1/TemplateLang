@@ -134,12 +134,12 @@ struct inv {
 };
 
 // function operators
-template <class Body, class... Params>
+template <class Body, int64_t n_params>
 struct function {
   template <class Context>
   constexpr decltype(auto) operator()(const Context& context) {
     IS_EXPR(Body);
-    return program<Body, sizeof...(Params)>{};
+    return program<Body, n_params>{};
   }
 };
 
