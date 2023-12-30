@@ -13,7 +13,10 @@
 #include <utility>
 #include <vector>
 
-using dtype = int;
+using dtype = double;
+
+template <dtype v>
+struct value;
 
 #define IS_EXPR(Arg)                                                        \
   static_assert(std::is_invocable_v<Arg, const Context&>,                   \
@@ -49,7 +52,11 @@ struct context {
   const mem_t global_context_;
   Program program_;
 };
+
+using step_default = value<1.0>;
+using add_identity = value<0.0>;
 }  // namespace impl
+
 template <class T, std::size_t num_args>
 struct program {
   static constexpr std::size_t nargs = num_args;
@@ -81,10 +88,9 @@ struct value {
   }
 };
 
+// arithmetic operators
 template <class Arg, class... Args>
 struct add {
-  // static check that arg has a call operator
-
   template <class Context>
   constexpr dtype operator()(const Context& context) {
     IS_EXPR(Arg);
@@ -94,6 +100,36 @@ struct add {
   }
 };
 
+template <class Arg, class... Args>
+struct mul {
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    IS_EXPR(Arg);
+    if constexpr (sizeof...(Args) > 0)
+      return Arg{}(context)*mul<Args...>{}(context);
+    return Arg()(context);
+  }
+};
+
+template <class Arg>
+struct neg {
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    IS_EXPR(Arg);
+    return -Arg{}(context);
+  }
+};
+
+template <class Arg>
+struct inv {
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    IS_EXPR(Arg);
+    return 1 / Arg{}(context);
+  }
+};
+
+// function operators
 template <class Body, class... Params>
 struct function {
   template <class Context>
@@ -121,7 +157,6 @@ struct recurse {
 };
 
 // comparison operators
-
 template <class Lhs, class Rhs>
 struct lt {
   template <class Context>
@@ -152,7 +187,8 @@ struct eq {
   }
 };
 
-template <class Cond, class TrueExpr, class FalseExpr = value<0>>
+// control flow operators
+template <class Cond, class TrueExpr, class FalseExpr = impl::add_identity>
 struct if_ {
   template <class Context>
   constexpr dtype operator()(const Context& context) {
@@ -166,18 +202,80 @@ struct if_ {
   }
 };
 
-template <class Func, class Start, class End, class Accum = value<0>>
-struct reduce {
+// generator: class with operator(const Context&) that returns a value for
+// index and is_done(int) that returns true if the generator is done
+template <class Func, class Start, class End, class Step = impl::step_default>
+struct gen {
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    IS_EXPR(Start);
+    IS_EXPR(End);
+    if (!is_started_) {
+      current_ = Start{}(context);
+      is_started_ = true;
+    }
+    dtype val = current_;
+    current_ += Step{}(context);
+    return Func{}(context).run(val);
+  }
+
+  template <class Context>
+  constexpr bool is_done(const Context& context) {
+    if (!is_started_) {
+      current_ = Start{}(context);
+      is_started_ = true;
+    }
+    return current_ == End{}(context);
+  }
+
+ private:
+  bool is_started_ = false;
+  dtype current_;
+};
+
+template <class Gen, class Func>
+struct compose {  // maybe map is a better name?
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    return local_func(context).run(local_gen(context));
+  }
+
+  template <class Context>
+  constexpr bool is_done(const Context& context) {
+    return local_gen.is_done(context);
+  }
+
+  Gen local_gen;
+  Func local_func;
+};
+
+// generator consumers
+template <class Gen>
+struct sum {
+  template <class Context>
+  constexpr dtype operator()(const Context& context) {
+    dtype accum = 0;
+    auto gen = Gen{};
+    while (!gen.is_done(context)) {
+      accum += gen(context);
+    }
+    return accum;
+  }
+};
+
+// iteration operators
+template <class Func, class Start, class End, class Accum = impl::add_identity>
+struct reduce_range {
   template <class Context>
   constexpr dtype operator()(const Context& context) {
     IS_EXPR(Start);
     IS_EXPR(End);
     IS_EXPR(Accum);
     dtype accum = Accum{}(context);
-    dtype start = Start{}(context);
-    dtype end = End{}(context);
-    for (dtype i = start; i <= end; ++i) {
-      accum = Func{}(context).run(i, accum);
+    int64_t start = static_cast<int64_t>(Start{}(context));
+    int64_t end = static_cast<int64_t>(End{}(context));
+    for (int64_t i = start; i < end; ++i) {
+      accum = Func{}(context).run(static_cast<dtype>(i), accum);
     }
     return accum;
   }
