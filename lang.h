@@ -13,9 +13,10 @@
 #include <utility>
 #include <vector>
 
-using dtype = double;
+using eval_dtype = double;
+using input_dtype = int64_t;
 
-template <dtype v>
+template <input_dtype v>
 struct value;
 
 #define IS_EXPR(Arg)                                                        \
@@ -26,24 +27,27 @@ struct value;
   static_assert((std::is_invocable_v<Args, const Context&> && ...),         \
                 "template param pack is not an expr (needs to be callable " \
                 "with context) for template params");
-#define IS_DTYPE(Arg)                       \
-  static_assert(std::is_same_v<dtype, Arg>, \
-                "template param is not a dtype for template param");
-#define ARE_DTYPE(Args)                               \
-  static_assert((std::is_same_v<dtype, Args> && ...), \
-                "template param pack is not a dtype for template params");
+#define IS_DTYPE(Arg)                            \
+  static_assert(std::is_same_v<eval_dtype, Arg>, \
+                "template param is not a eval_dtype for template param");
+#define ARE_DTYPE(Args)                          \
+  static_assert(                                 \
+      (std::is_same_v<eval_dtype, Args> && ...), \
+      "template param pack is not a eval_dtype for template params");
 
 namespace impl {
 template <class Program>
 struct context {
-  using mem_t = std::array<dtype, Program::nargs>;
+  using mem_t = std::array<eval_dtype, Program::nargs>;
 
   template <class... Args>
   constexpr context(Args... args) : global_context_({args...}) {
     ARE_DTYPE(Args);
   }
 
-  constexpr dtype get_context(int idx) const { return global_context_[idx]; }
+  constexpr eval_dtype get_context(int idx) const {
+    return global_context_[idx];
+  }
 
   constexpr Program& get_program() { return program_; }
   using program_t = Program;
@@ -53,8 +57,8 @@ struct context {
   Program program_;
 };
 
-using step_default = value<1.0>;
-using add_identity = value<0.0>;
+using step_default = value<1>;
+using add_identity = value<0>;
 }  // namespace impl
 
 template <class T, std::size_t num_args>
@@ -64,8 +68,9 @@ struct program {
   using local_context = impl::context<program<T, nargs>>;
 
   template <class... Args>
-  constexpr dtype run(Args... args) const {  // note: decltype(auto) works with
-                                             // mvsc, but not with clang???
+  constexpr eval_dtype run(
+      Args... args) const {  // note: decltype(auto) works with
+                             // mvsc, but not with clang???
     ARE_DTYPE(Args);
     return prog{}(local_context(args...));
   }
@@ -73,18 +78,17 @@ struct program {
 
 template <int idx>
 struct variable {
-  static constexpr dtype val = idx;
+  static constexpr eval_dtype val = idx;
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     return context.get_context(idx);
   }
 };
-template <dtype v>
+template <input_dtype v>
 struct value {
-  static constexpr dtype val = v;
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
-    return val;
+  constexpr eval_dtype operator()(const Context& context) {
+    return static_cast<eval_dtype>(v);
   }
 };
 
@@ -92,7 +96,7 @@ struct value {
 template <class Arg, class... Args>
 struct add {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Arg);
     if constexpr (sizeof...(Args) > 0)
       return Arg{}(context) + add<Args...>{}(context);
@@ -103,7 +107,7 @@ struct add {
 template <class Arg, class... Args>
 struct mul {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Arg);
     if constexpr (sizeof...(Args) > 0)
       return Arg{}(context)*mul<Args...>{}(context);
@@ -114,7 +118,7 @@ struct mul {
 template <class Arg>
 struct neg {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Arg);
     return -Arg{}(context);
   }
@@ -123,7 +127,7 @@ struct neg {
 template <class Arg>
 struct inv {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Arg);
     return 1 / Arg{}(context);
   }
@@ -150,7 +154,7 @@ struct call {
 template <class... Args>
 struct recurse {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     using p = Context::program_t;
     return typename Context::program_t{}.run(Args{}(context)...);
   }
@@ -160,7 +164,7 @@ struct recurse {
 template <class Lhs, class Rhs>
 struct lt {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Lhs);
     IS_EXPR(Rhs);
     return Lhs{}(context) < Rhs{}(context);
@@ -170,7 +174,7 @@ struct lt {
 template <class Lhs, class Rhs>
 struct lteq {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Lhs);
     IS_EXPR(Rhs);
     return Lhs{}(context) <= Rhs{}(context);
@@ -180,7 +184,7 @@ struct lteq {
 template <class Lhs, class Rhs>
 struct eq {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Lhs);
     IS_EXPR(Rhs);
     return Lhs{}(context) == Rhs{}(context);
@@ -191,7 +195,7 @@ struct eq {
 template <class Cond, class TrueExpr, class FalseExpr = impl::add_identity>
 struct if_ {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Cond);
     IS_EXPR(TrueExpr);
     IS_EXPR(FalseExpr);
@@ -207,14 +211,14 @@ struct if_ {
 template <class Func, class Start, class End, class Step = impl::step_default>
 struct gen {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Start);
     IS_EXPR(End);
     if (!is_started_) {
       current_ = Start{}(context);
       is_started_ = true;
     }
-    dtype val = current_;
+    eval_dtype val = current_;
     current_ += Step{}(context);
     return Func{}(context).run(val);
   }
@@ -230,13 +234,13 @@ struct gen {
 
  private:
   bool is_started_ = false;
-  dtype current_;
+  eval_dtype current_;
 };
 
 template <class Gen, class Func>
 struct compose {  // maybe map is a better name?
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     return local_func(context).run(local_gen(context));
   }
 
@@ -253,8 +257,8 @@ struct compose {  // maybe map is a better name?
 template <class Gen>
 struct sum {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
-    dtype accum = 0;
+  constexpr eval_dtype operator()(const Context& context) {
+    eval_dtype accum = 0;
     auto gen = Gen{};
     while (!gen.is_done(context)) {
       accum += gen(context);
@@ -267,15 +271,15 @@ struct sum {
 template <class Func, class Start, class End, class Accum = impl::add_identity>
 struct reduce_range {
   template <class Context>
-  constexpr dtype operator()(const Context& context) {
+  constexpr eval_dtype operator()(const Context& context) {
     IS_EXPR(Start);
     IS_EXPR(End);
     IS_EXPR(Accum);
-    dtype accum = Accum{}(context);
+    eval_dtype accum = Accum{}(context);
     int64_t start = static_cast<int64_t>(Start{}(context));
     int64_t end = static_cast<int64_t>(End{}(context));
     for (int64_t i = start; i < end; ++i) {
-      accum = Func{}(context).run(static_cast<dtype>(i), accum);
+      accum = Func{}(context).run(static_cast<eval_dtype>(i), accum);
     }
     return accum;
   }
