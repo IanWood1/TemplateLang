@@ -19,14 +19,10 @@ using input_dtype = int64_t;
 template <input_dtype v>
 struct value;
 
-#define IS_EXPR(Arg)                                                        \
-  static_assert(std::is_invocable_v<Arg, const Context&>,                   \
-                "template param is not an expr (needs to be callable with " \
-                "context) for template param");
-#define ARE_EXPR(Args)                                                      \
-  static_assert((std::is_invocable_v<Args, const Context&> && ...),         \
-                "template param pack is not an expr (needs to be callable " \
-                "with context) for template params");
+struct Expression {};
+struct Function {};
+struct Generator {};
+
 #define IS_DTYPE(Arg)                            \
   static_assert(std::is_same_v<eval_dtype, Arg>, \
                 "template param is not a eval_dtype for template param");
@@ -77,7 +73,7 @@ struct program {
 };
 
 template <int idx>
-struct variable {
+struct variable : Expression {
   static constexpr eval_dtype val = idx;
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
@@ -85,7 +81,7 @@ struct variable {
   }
 };
 template <input_dtype v>
-struct value {
+struct value : Expression {
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
     return static_cast<eval_dtype>(v);
@@ -94,10 +90,11 @@ struct value {
 
 // arithmetic operators
 template <class Arg, class... Args>
-struct add {
+struct add : Expression {
+  static_assert(std::is_base_of<Expression, Arg>::value);
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Arg);
     if constexpr (sizeof...(Args) > 0)
       return Arg{}(context) + add<Args...>{}(context);
     return Arg()(context);
@@ -105,10 +102,11 @@ struct add {
 };
 
 template <class Arg, class... Args>
-struct mul {
+struct mul : Expression {
+  static_assert(std::is_base_of<Expression, Arg>::value);
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Arg);
     if constexpr (sizeof...(Args) > 0)
       return Arg{}(context)*mul<Args...>{}(context);
     return Arg()(context);
@@ -116,35 +114,37 @@ struct mul {
 };
 
 template <class Arg>
-struct neg {
+struct neg : Expression {
+  static_assert(std::is_base_of<Expression, Arg>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Arg);
     return -Arg{}(context);
   }
 };
 
 template <class Arg>
-struct inv {
+struct inv : Expression {
+  static_assert(std::is_base_of<Expression, Arg>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Arg);
     return 1 / Arg{}(context);
   }
 };
 
 // function operators
 template <class Body, int64_t n_params>
-struct function {
+struct function : Function {
+  static_assert(std::is_base_of<Expression, Body>::value);
   template <class Context>
   constexpr decltype(auto) operator()(const Context& context) {
-    IS_EXPR(Body);
     return program<Body, n_params>{};
   }
 };
 
 template <class Func, class... Args>
-struct call {
+struct call : Expression {
+  static_assert(std::is_base_of<Function, Func>::value);
+  static_assert((std::is_base_of<Expression, Args>::value && ...));
   template <class Context>
   constexpr decltype(auto) operator()(const Context& context) {
     return Func{}(context).run(Args{}(context)...);
@@ -152,7 +152,9 @@ struct call {
 };
 
 template <class... Args>
-struct recurse {
+struct recurse : Expression {
+  static_assert((std::is_base_of<Expression, Args>::value && ...));
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
     using p = Context::program_t;
@@ -162,43 +164,45 @@ struct recurse {
 
 // comparison operators
 template <class Lhs, class Rhs>
-struct lt {
+struct lt : Expression {
+  static_assert(std::is_base_of<Expression, Lhs>::value);
+  static_assert(std::is_base_of<Expression, Rhs>::value);
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Lhs);
-    IS_EXPR(Rhs);
     return Lhs{}(context) < Rhs{}(context);
   }
 };
 
 template <class Lhs, class Rhs>
-struct lteq {
+struct lteq : Expression {
+  static_assert(std::is_base_of<Expression, Lhs>::value);
+  static_assert(std::is_base_of<Expression, Rhs>::value);
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Lhs);
-    IS_EXPR(Rhs);
     return Lhs{}(context) <= Rhs{}(context);
   }
 };
 
 template <class Lhs, class Rhs>
-struct eq {
+struct eq : Expression {
+  static_assert(std::is_base_of<Expression, Lhs>::value);
+  static_assert(std::is_base_of<Expression, Rhs>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Lhs);
-    IS_EXPR(Rhs);
     return Lhs{}(context) == Rhs{}(context);
   }
 };
 
 // control flow operators
 template <class Cond, class TrueExpr, class FalseExpr = impl::add_identity>
-struct if_ {
+struct if_ : Expression {
+  static_assert(std::is_base_of<Expression, Cond>::value);
+  static_assert(std::is_base_of<Expression, TrueExpr>::value);
+  static_assert(std::is_base_of<Expression, FalseExpr>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Cond);
-    IS_EXPR(TrueExpr);
-    IS_EXPR(FalseExpr);
     if (Cond{}(context)) {
       return TrueExpr{}(context);
     }
@@ -209,11 +213,14 @@ struct if_ {
 // generator: class with operator(const Context&) that returns a value for
 // index and is_done(int) that returns true if the generator is done
 template <class Func, class Start, class End, class Step = impl::step_default>
-struct gen {
+struct gen : Generator {
+  static_assert(std::is_base_of<Function, Func>::value);
+  static_assert(std::is_base_of<Expression, Start>::value);
+  static_assert(std::is_base_of<Expression, End>::value);
+  static_assert(std::is_base_of<Expression, Step>::value);
+
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Start);
-    IS_EXPR(End);
     if (!is_started_) {
       current_ = Start{}(context);
       is_started_ = true;
@@ -238,7 +245,8 @@ struct gen {
 };
 
 template <class Gen, class Func>
-struct compose {  // maybe map is a better name?
+struct compose : Generator {  // maybe map is a better name?
+  static_assert(std::is_base_of<Function, Func>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
     return local_func(context).run(local_gen(context));
@@ -255,7 +263,7 @@ struct compose {  // maybe map is a better name?
 
 // generator consumers
 template <class Gen>
-struct sum {
+struct sum : Expression {
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
     eval_dtype accum = 0;
@@ -269,12 +277,13 @@ struct sum {
 
 // iteration operators
 template <class Func, class Start, class End, class Accum = impl::add_identity>
-struct reduce_range {
+struct reduce_range : Expression {
+  static_assert(std::is_base_of<Function, Func>::value);
+  static_assert(std::is_base_of<Expression, Start>::value);
+  static_assert(std::is_base_of<Expression, End>::value);
+  static_assert(std::is_base_of<Expression, Accum>::value);
   template <class Context>
   constexpr eval_dtype operator()(const Context& context) {
-    IS_EXPR(Start);
-    IS_EXPR(End);
-    IS_EXPR(Accum);
     eval_dtype accum = Accum{}(context);
     int64_t start = static_cast<int64_t>(Start{}(context));
     int64_t end = static_cast<int64_t>(End{}(context));

@@ -4,7 +4,7 @@
 #include "TemplateLang.h"
 
 // clang-format off
-double sequence_sum_reduce(double x) {
+constexpr double sequence_sum_reduce(double x) {
 
   // sum from 1 to n
   using f = function<
@@ -21,7 +21,7 @@ double sequence_sum_reduce(double x) {
               1>{}.run(x);
 }
 
-double sequence_sum_generator(double x) {
+constexpr double sequence_sum_generator(double x) {
 
   using range = gen<
                   function<variable<0>, 1>,
@@ -33,7 +33,7 @@ double sequence_sum_generator(double x) {
 							1>{}.run(x);
 }
 
-double fib_recursive(double x) {
+constexpr double fib_recursive(double x) {
   using f = function<
               if_<
                 lteq<variable<0>, value<1>>, 
@@ -47,7 +47,7 @@ double fib_recursive(double x) {
             1>{}.run(x);
 }
 
-double e_approx(double n_terms) {
+constexpr double e_approx(double n_terms) {
 	using range_gen = gen<
 		                function<variable<0>, 1>,
 		                value<0>,
@@ -81,5 +81,15 @@ int main() {
             << "\n";
   std::cout << "recurse:  fib(10) = " << fib_recursive(10) << "\n";
   std::cout << "e approx: " << e_approx(1000) << "\n";
+
+  constexpr static auto reduce = sequence_sum_reduce(100);
+  constexpr static auto gen = sequence_sum_generator(100);
+  constexpr static auto fib = fib_recursive(10);
+  constexpr static auto e = e_approx(100);
+  std::cout << "\n";
+  std::cout << "constexpr reduce:   sum of 1 to 100 = " << reduce << "\n";
+  std::cout << "constexpr gen:      sum of 1 to 100 = " << gen << "\n";
+  std::cout << "constexpr recurse:  fib(10) = " << fib << "\n";
+  std::cout << "constexpr e approx: " << e << "\n";
   return 0;
 }
