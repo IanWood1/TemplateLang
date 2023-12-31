@@ -1,6 +1,8 @@
 # TemplateLang
 TemplateLang is a language within C++ that uses templates for calculations at both runtime and compile time. Goal of the mini-project was to explore C++ templates and learn what can be done with them.
 
+From the programs I have tested, Clang is able to evaluate programs as constexprs when  input is constexpr. In addition, it preforms decent at runtime and the compilers are able to inline/optimize alot of the calls.
+
 
 ## Usage
 ### Types
